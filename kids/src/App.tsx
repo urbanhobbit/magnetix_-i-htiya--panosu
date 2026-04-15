@@ -1,13 +1,4 @@
-import React, { useState } from 'react';
-import {
-  DndContext, DragOverlay, closestCenter,
-  PointerSensor, useSensor, useSensors,
-  DragStartEvent, DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  SortableContext, verticalListSortingStrategy, useSortable,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Star, Heart, Send, ArrowLeft } from 'lucide-react';
 
@@ -23,7 +14,7 @@ const PRESET_ITEMS: Item[] = [
   { id: 'k1', text: 'Kitap', emoji: '📚' },
   { id: 'k2', text: 'Bilgisayar', emoji: '💻' },
   { id: 'k3', text: 'Tablet', emoji: '📱' },
-  { id: 'k4', text: 'internet', emoji: '🌐' },
+  { id: 'k4', text: 'İnternet', emoji: '🌐' },
   { id: 'k5', text: 'Yemek', emoji: '🍎' },
   { id: 'k6', text: 'Kıyafet', emoji: '👕' },
   { id: 'k7', text: 'Spor', emoji: '⚽' },
@@ -53,55 +44,34 @@ const COLORS = [
   'bg-red-200 border-red-400',
 ];
 
-function SortableItem({ item, onRemove }: { item: Item; onRemove: () => void }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
-  
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-  
+function ItemCard({ item, onRemove, showRemove, onClick }: { item: Item; onRemove?: () => void; showRemove?: boolean; onClick?: () => void }) {
   const colorIndex = parseInt(item.id.slice(1)) % COLORS.length;
   
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
+    <motion.div
+      layout
+      initial={{ scale: 0.8, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      exit={{ scale: 0.8, opacity: 0 }}
+      onClick={onClick}
       className={`
         ${COLORS[colorIndex]}
-        border-4 rounded-2xl p-4 cursor-grab active:cursor-grabbing
+        border-4 rounded-2xl p-4
         flex items-center gap-3 text-lg font-bold text-gray-800
-        shadow-lg hover:shadow-xl transition-shadow select-none
-        ${isDragging ? 'opacity-50 scale-105' : ''}
+        shadow-lg hover:shadow-xl transition-all cursor-pointer hover:scale-105 active:scale-95
       `}
     >
       <span className="text-3xl">{item.emoji}</span>
       <span className="flex-1">{item.text}</span>
-      <button
-        onClick={(e) => { e.stopPropagation(); onRemove(); }}
-        className="w-8 h-8 rounded-full bg-white/50 hover:bg-red-400 flex items-center justify-center text-xl"
-      >
-        ✕
-      </button>
-    </div>
-  );
-}
-
-function DraggableItem({ item }: { item: Item }) {
-  const colorIndex = parseInt(item.id.slice(1)) % COLORS.length;
-  
-  return (
-    <div className={`
-      ${COLORS[colorIndex]}
-      border-4 rounded-2xl p-4 cursor-grab
-      flex items-center gap-3 text-lg font-bold text-gray-800
-      shadow-lg hover:shadow-xl transition-shadow select-none
-    `}>
-      <span className="text-3xl">{item.emoji}</span>
-      <span className="flex-1">{item.text}</span>
-    </div>
+      {showRemove && onRemove && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          className="w-8 h-8 rounded-full bg-white/50 hover:bg-red-400 flex items-center justify-center text-xl"
+        >
+          ✕
+        </button>
+      )}
+    </motion.div>
   );
 }
 
@@ -109,33 +79,14 @@ function App() {
   const [name, setName] = useState('');
   const [showNameInput, setShowNameInput] = useState(true);
   const [selectedItems, setSelectedItems] = useState<Item[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
-  );
-  
   const poolItems = PRESET_ITEMS.filter(item => !selectedItems.find(s => s.id === item.id));
   
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
-  };
-  
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    setActiveId(null);
-    
-    if (!over) return;
-    
-    const activeItem = [...selectedItems, ...poolItems].find(i => i.id === active.id);
-    if (!activeItem) return;
-    
-    if (over.id === 'selected') {
-      if (!selectedItems.find(i => i.id === activeItem.id)) {
-        setSelectedItems([...selectedItems, activeItem]);
-      }
+  const addItem = (item: Item) => {
+    if (!selectedItems.find(i => i.id === item.id)) {
+      setSelectedItems([...selectedItems, item]);
     }
   };
   
@@ -218,8 +169,6 @@ function App() {
     );
   }
   
-  const activeItem = activeId ? [...selectedItems, ...poolItems].find(i => i.id === activeId) : null;
-  
   return (
     <div className="min-h-screen p-4 md:p-8">
       <header className="flex items-center justify-between mb-6">
@@ -248,69 +197,53 @@ function App() {
         )}
       </header>
       
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-      >
-        <div className="grid md:grid-cols-2 gap-6">
-          <div className="bg-white/60 backdrop-blur rounded-3xl p-6 shadow-xl">
-            <h2 className="text-2xl font-black text-gray-800 mb-4 flex items-center gap-2">
-              <Heart className="text-pink-500 w-8 h-8" />
-              İstediklerim ({selectedItems.length})
-            </h2>
-            
-            <DroppableArea id="selected" className="min-h-[300px]">
-              {selectedItems.length === 0 ? (
-                <div className="text-center text-gray-400 py-12">
-                  <Star className="w-16 h-16 mx-auto mb-2 opacity-50" />
-                  <p className="text-lg">Buraya şeyler koyabilirsin!</p>
-                </div>
-              ) : (
-                <SortableContext items={selectedItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
-                  <div className="space-3">
-                    <AnimatePresence>
-                      {selectedItems.map(item => (
-                        <SortableItem key={item.id} item={item} onRemove={() => removeFromSelected(item.id)} />
-                      ))}
-                    </AnimatePresence>
-                  </div>
-                </SortableContext>
-              )}
-            </DroppableArea>
-          </div>
+      <div className="grid md:grid-cols-2 gap-6">
+        <div className="bg-white/60 backdrop-blur rounded-3xl p-6 shadow-xl">
+          <h2 className="text-2xl font-black text-gray-800 mb-4 flex items-center gap-2">
+            <Heart className="text-pink-500 w-8 h-8" />
+            İstediklerim ({selectedItems.length})
+          </h2>
           
-          <div className="bg-white/60 backdrop-blur rounded-3xl p-6 shadow-xl">
-            <h2 className="text-2xl font-black text-gray-800 mb-4 flex items-center gap-2">
-              <Star className="text-yellow-500 w-8 h-8" />
-              Şeyler ({poolItems.length})
-            </h2>
-            
-            <SortableContext items={poolItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
-              <div className="space-3 max-h-[500px] overflow-y-auto pr-2">
-                {poolItems.map(item => (
-                  <DraggableItem key={item.id} item={item} />
-                ))}
+          <div className="min-h-[300px]">
+            {selectedItems.length === 0 ? (
+              <div className="text-center text-gray-400 py-12">
+                <Star className="w-16 h-16 mx-auto mb-2 opacity-50" />
+                <p className="text-lg">Buraya şeyler koyabilirsin!</p>
               </div>
-            </SortableContext>
+            ) : (
+              <div className="space-3">
+                <AnimatePresence>
+                  {selectedItems.map(item => (
+                    <ItemCard 
+                      key={item.id} 
+                      item={item} 
+                      showRemove 
+                      onRemove={() => removeFromSelected(item.id)} 
+                    />
+                  ))}
+                </AnimatePresence>
+              </div>
+            )}
           </div>
         </div>
         
-        <DragOverlay>
-          {activeItem ? <DraggableItem item={activeItem} /> : null}
-        </DragOverlay>
-      </DndContext>
-    </div>
-  );
-}
-
-function DroppableArea({ id, children, className }: { id: string; children: React.ReactNode; className?: string }) {
-  const { setNodeRef } = useSortable({ id });
-  
-  return (
-    <div ref={setNodeRef} className={className}>
-      {children}
+        <div className="bg-white/60 backdrop-blur rounded-3xl p-6 shadow-xl">
+          <h2 className="text-2xl font-black text-gray-800 mb-4 flex items-center gap-2">
+            <Star className="text-yellow-500 w-8 h-8" />
+            Şeyler ({poolItems.length})
+          </h2>
+          
+          <div className="space-3 max-h-[500px] overflow-y-auto pr-2">
+            {poolItems.map(item => (
+              <ItemCard 
+                key={item.id} 
+                item={item} 
+                onClick={() => addItem(item)} 
+              />
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
