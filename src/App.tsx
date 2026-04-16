@@ -889,15 +889,34 @@ export default function App() {
       fetch(`${APPS_SCRIPT_URL}?action=getL2Results`)
         .then(r => r.json())
         .then(data => {
-          const expertResults: { expertName: string; needs: any[]; groups: any[] }[] = data.expertResults || [];
-
-          if (expertResults.length === 0) {
+          // Support both old format ({ needs, groups }) and new format ({ expertResults })
+          if (data.expertResults && data.expertResults.length > 0) {
+            // New format: raw expert data, consensus calculated below
+          } else if (data.needs && data.needs.length > 0) {
+            // Old format fallback: treat as single expert result
+            const fallbackNeeds: Need[] = data.needs.map((n: any) => ({
+              id: n.id,
+              text: n.text,
+              stage: (n.consensus !== undefined && n.consensus >= 0.7) ? (n.stage || 'selected') : 'pool',
+              groupId: (n.consensus !== undefined && n.consensus >= 0.7) ? n.groupId : undefined,
+              consensus: n.consensus ?? 1,
+              originalNotes: n.originalNotes,
+            }));
+            const fallbackGroups: Group[] = (data.groups || []).map((g: any) => ({
+              id: g.id, name: g.name, stage: g.stage || 'selected',
+            }));
+            setNeeds(fallbackNeeds);
+            setGroups(fallbackGroups);
+            setLoadingNotes(false);
+            return;
+          } else {
             setNeeds([]);
             setGroups([]);
             setLoadingNotes(false);
             return;
           }
 
+          const expertResults: { expertName: string; needs: any[]; groups: any[] }[] = data.expertResults;
           const totalExperts = expertResults.length;
 
           // Build a map: normalized need text → { text, assignments: [{groupName, expertName}], stages[] }
