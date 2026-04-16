@@ -31,9 +31,11 @@ function getOrCreateSheet(name, headers) {
   let sheet = ss.getSheetByName(name);
   if (!sheet) {
     sheet = ss.insertSheet(name);
-    sheet.appendRow(headers);
-    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
-    sheet.setFrozenRows(1);
+    if (headers && headers.length > 0) {
+      sheet.appendRow(headers);
+      sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+      sheet.setFrozenRows(1);
+    }
   }
   return sheet;
 }
@@ -316,62 +318,64 @@ function getL1Notes() {
 
 function parseAndDedup(rawNotes) {
   // Her notu satır satır parse et
-  const itemMap = {}; // normalizedText -> { text, sources: Set, category }
+  var itemMap = {}; // normalizedText -> { text, sources: {}, category }
 
-  rawNotes.forEach(note => {
-    const lines = note.text.split('\n');
-    let currentCategory = '';
+  for (var n = 0; n < rawNotes.length; n++) {
+    var note = rawNotes[n];
+    var lines = String(note.text).split('\n');
+    var currentCategory = '';
 
-    lines.forEach(line => {
-      const trimmed = line.trim();
-      if (!trimmed) return;
+    for (var li = 0; li < lines.length; li++) {
+      var trimmed = lines[li].replace(/^\s+|\s+$/g, '');
+      if (!trimmed) continue;
 
       // "- " ile başlayan satır = ihtiyaç maddesi
-      if (trimmed.startsWith('- ') || trimmed.startsWith('-')) {
-        const itemText = trimmed.replace(/^-\s*/, '').trim();
-        if (!itemText || itemText === ',') return;
+      if (trimmed.charAt(0) === '-') {
+        var itemText = trimmed.replace(/^-\s*/, '').replace(/^\s+|\s+$/g, '');
+        if (!itemText || itemText === ',') continue;
 
-        const normalized = itemText.toLowerCase()
+        var normalized = itemText.toLowerCase()
           .replace(/[.,;:!?]/g, '')
           .replace(/\s+/g, ' ')
-          .trim();
+          .replace(/^\s+|\s+$/g, '');
 
-        if (!normalized) return;
+        if (!normalized) continue;
 
         if (!itemMap[normalized]) {
           itemMap[normalized] = {
             text: itemText,
-            sources: new Set(),
+            sources: {},
             category: currentCategory,
           };
         }
-        itemMap[normalized].sources.add(note.expertName);
+        itemMap[normalized].sources[note.expertName] = true;
       } else {
         // Başlık satırı (kategori)
         currentCategory = trimmed;
       }
-    });
-  });
+    }
+  }
 
   // Sonuçları frontend formatına dönüştür
-  const results = [];
-  let idx = 0;
-  Object.keys(itemMap).forEach(key => {
-    const entry = itemMap[key];
-    const sources = Array.from(entry.sources);
+  var results = [];
+  var idx = 0;
+  var keys = Object.keys(itemMap);
+  for (var k = 0; k < keys.length; k++) {
+    var entry = itemMap[keys[k]];
+    var sourceNames = Object.keys(entry.sources);
     results.push({
       id: 'syn_' + idx,
       text: entry.text,
-      expertName: sources.join(', '),
+      expertName: sourceNames.join(', '),
       timestamp: new Date().toISOString(),
       category: entry.category,
-      sourceCount: sources.length,
+      sourceCount: sourceNames.length,
     });
     idx++;
-  });
+  }
 
   // Çok kaynaklı olanlar önce gelsin
-  results.sort((a, b) => b.sourceCount - a.sourceCount);
+  results.sort(function(a, b) { return b.sourceCount - a.sourceCount; });
 
   return results;
 }
