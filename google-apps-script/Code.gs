@@ -23,6 +23,8 @@ const NEEDS_SHEET = 'İhtiyaçlar';
 const L1_NOTES_SHEET = 'L1Notlar';
 const L2_RESULTS_SHEET = 'L2Sonuçlar';
 const L3_RESULTS_SHEET = 'L3Sonuçlar';
+const GEMINI_API_KEY = 'AIzaSyCltmidQw58gddgequAEt_fAmIvCLqC8o8';
+const GEMINI_MODEL = 'gemini-2.0-flash';
 
 function getOrCreateSheet(name, headers) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -267,7 +269,7 @@ function doGet(e) {
   }
 }
 
-// ─── getL1Notes: Tüm uzmanların L1 notlarını döndür ────────────────────────
+// ─── getL1Notes: Tüm uzmanların L1 notlarını Gemini ile sentezleyip döndür ──
 
 function getL1Notes() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -281,7 +283,7 @@ function getL1Notes() {
 
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
-  const notes = data.slice(1).map(row => {
+  const rawNotes = data.slice(1).map(row => {
     const obj = {};
     headers.forEach((h, i) => { obj[h] = row[i]; });
     return {
@@ -292,9 +294,103 @@ function getL1Notes() {
     };
   });
 
-  return ContentService
-    .createTextOutput(JSON.stringify({ notes: notes }))
-    .setMimeType(ContentService.MimeType.JSON);
+  if (rawNotes.length === 0) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ notes: [] }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // Gemini ile sentezle
+  try {
+    const synthesized = synthesizeL1NotesWithGemini(rawNotes);
+    return ContentService
+      .createTextOutput(JSON.stringify({ notes: synthesized, raw: rawNotes }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    // Gemini başarısız olursa ham notları döndür
+    Logger.log('Gemini synthesis failed: ' + err.toString());
+    return ContentService
+      .createTextOutput(JSON.stringify({ notes: rawNotes, synthesisError: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ─── Gemini API ile L1 notlarını sentezle ───────────────────────────────────
+
+function synthesizeL1NotesWithGemini(rawNotes) {
+  // Notları uzman bazında grupla
+  const byExpert = {};
+  rawNotes.forEach(n => {
+    if (!byExpert[n.expertName]) byExpert[n.expertName] = [];
+    byExpert[n.expertName].push(n.text);
+  });
+
+  const expertSummary = Object.keys(byExpert).map(name =>
+    name + ':\n' + byExpert[name].map((t, i) => '  ' + (i + 1) + '. ' + t).join('\n')
+  ).join('\n\n');
+
+  const prompt = `Sen bir ihtiyaç analizi uzmanısın. Aşağıda birden fazla uzmanın serbest yazılmış ihtiyaç notları var.
+
+Görevin:
+1. Tüm notları oku ve anlamsal olarak benzer/örtüşen notları birleştir
+2. Her birleştirilmiş ihtiyacı kısa, net ve tek cümlelik bir ifadeye dönüştür
+3. Tekrar edenleri çıkar, ama hiçbir özgün ihtiyacı kaybetme
+4. Sonucu JSON formatında döndür
+
+UZMAN NOTLARI:
+${expertSummary}
+
+ÇIKTI FORMATI (sadece JSON, başka bir şey yazma):
+[
+  {"text": "Sentezlenmiş ihtiyaç ifadesi", "sources": ["Uzman1", "Uzman2"]},
+  {"text": "Başka bir ihtiyaç", "sources": ["Uzman3"]}
+]
+
+Kurallar:
+- Her ihtiyaç Türkçe olmalı
+- "sources" alanında bu ihtiyacı belirten uzman adlarını listele
+- Çok benzer notları tek ihtiyaçta birleştir
+- Tamamen farklı notları ayrı ihtiyaç olarak koru
+- Sadece JSON döndür, açıklama ekleme`;
+
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + GEMINI_API_KEY;
+
+  const response = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.3,
+        maxOutputTokens: 4096,
+      },
+    }),
+    muteHttpExceptions: true,
+  });
+
+  const result = JSON.parse(response.getContentText());
+
+  if (result.error) {
+    throw new Error('Gemini API error: ' + JSON.stringify(result.error));
+  }
+
+  const text = result.candidates[0].content.parts[0].text;
+
+  // JSON'ı parse et (markdown code block olabilir)
+  let jsonStr = text.trim();
+  if (jsonStr.startsWith('```')) {
+    jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+  }
+
+  const synthesized = JSON.parse(jsonStr);
+
+  // Frontend'in beklediği formata dönüştür
+  return synthesized.map((item, idx) => ({
+    id: 'syn_' + idx,
+    text: item.text,
+    expertName: (item.sources || []).join(', '),
+    timestamp: new Date().toISOString(),
+  }));
 }
 
 // ─── getL2Results: L2 sonuçlarını sentezle ve döndür ────────────────────────
