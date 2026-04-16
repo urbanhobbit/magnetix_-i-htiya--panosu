@@ -62,7 +62,7 @@ const STAGE_CONFIG: Record<Stage, {
     dot: '#d4a820',
   },
   selected: {
-    label: 'Seçim',
+    label: 'Tasnif',
     bg: '#f0faf0',
     cardBg: '#f0faf0',
     border: '#4a9a30',
@@ -805,27 +805,36 @@ export default function App() {
   const [sending, setSending] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [allL1Notes, setAllL1Notes] = useState<L1Note[]>([]);
+  const [loadingNotes, setLoadingNotes] = useState(false);
 
-  // ─── Fetch existing L1 notes for L2 ───────────────────────────────────────
+  // ─── Fetch synthesized L1 notes for L2 ────────────────────────────────────
   useEffect(() => {
     if (currentLevel === 'L2' && APPS_SCRIPT_URL) {
-      fetch(`${APPS_SCRIPT_URL}?action=getL1Notes`)
-        .then(r => r.json())
-        .then(data => {
-          if (data.notes) {
-            setAllL1Notes(data.notes);
-            // Create pool needs from all L1 notes
-            const poolNeeds: Need[] = data.notes.map((note: L1Note, i: number) => ({
-              id: `l1_${i}_${note.id || Math.random().toString(36).slice(2)}`,
-              text: note.text,
-              stage: 'pool' as Stage,
-              originalNotes: [note.text],
-            }));
-            setNeeds(poolNeeds);
-            setGroups([]);
-          }
-        })
-        .catch(err => console.error('Failed to fetch L1 notes:', err));
+      setLoadingNotes(true);
+      // Delay to allow POST to complete before fetching
+      const timer = setTimeout(() => {
+        fetch(`${APPS_SCRIPT_URL}?action=getL1Notes`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.notes && data.notes.length > 0) {
+              setAllL1Notes(data.notes);
+              const poolNeeds: Need[] = data.notes.map((note: L1Note, i: number) => ({
+                id: `l1_${i}_${note.id || Math.random().toString(36).slice(2)}`,
+                text: note.text,
+                stage: 'pool' as Stage,
+                originalNotes: [note.text],
+              }));
+              setNeeds(poolNeeds);
+              setGroups([]);
+            }
+            setLoadingNotes(false);
+          })
+          .catch(err => {
+            console.error('Failed to fetch L1 notes:', err);
+            setLoadingNotes(false);
+          });
+      }, 3000); // 3 sec delay for Sheets write to complete
+      return () => clearTimeout(timer);
     }
   }, [currentLevel]);
 
@@ -879,16 +888,8 @@ export default function App() {
 
   const handleL1Submit = useCallback((noteTexts: string[]) => {
     setL1Submitted(true);
-    // Auto-advance to L2
+    // Auto-advance to L2 after a short delay to let the POST reach Sheets
     setCurrentLevel('L2');
-    // Create pool needs from own notes for now
-    const poolNeeds: Need[] = noteTexts.map((text, i) => ({
-      id: `own_${i}_${Math.random().toString(36).slice(2)}`,
-      text,
-      stage: 'pool' as Stage,
-    }));
-    setNeeds(poolNeeds);
-    setGroups([]);
   }, []);
 
   const handleSubmit = useCallback(async () => {
@@ -1051,6 +1052,26 @@ export default function App() {
   // ─── L2 / L3: Board ──────────────────────────────────────────────────────
   const levelCfg = LEVEL_CONFIG[currentLevel];
 
+  // Loading screen while fetching synthesized notes
+  if (loadingNotes && currentLevel === 'L2') {
+    return (
+      <div className="h-screen flex items-center justify-center bg-[#f6f3ed] font-sans">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex flex-col items-center gap-4"
+        >
+          <Loader2 className="w-8 h-8 text-[#38a020] animate-spin" />
+          <h2 className="text-sm font-bold text-[#4a3a18]">Notlar Sentezleniyor...</h2>
+          <p className="text-xs text-[#8a6a20]/60 text-center max-w-xs">
+            Tüm uzmanların L1 notları yapay zeka ile birleştiriliyor.<br />
+            Bu işlem birkaç saniye sürebilir.
+          </p>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-[#f6f3ed] font-sans">
       <DndContext sensors={sensors} collisionDetection={closestCenter}
@@ -1154,7 +1175,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* 3-panel layout */}
+        {/* 2-panel layout for L2 (pool + single board), 3-panel for L3 */}
         <div className="flex-1 flex overflow-hidden">
           <div className="w-[22%] min-w-[200px] max-w-[280px] flex flex-col">
             <PoolPanel needs={needs} groups={groups} searchQuery={searchQuery}
@@ -1162,14 +1183,25 @@ export default function App() {
               onDeleteGroup={deleteGroup} onRenameGroup={renameGroup} />
           </div>
           <div className="flex-1 flex flex-col gap-3 p-4 overflow-hidden">
-            <WorkSection stage="selected"
-              isCreatingGroup={creatingGroupStage === 'selected'}
-              onStartCreatingGroup={s => setCreatingGroupStage(s)}
-              {...workProps} />
-            <WorkSection stage="processed"
-              isCreatingGroup={creatingGroupStage === 'processed'}
-              onStartCreatingGroup={s => setCreatingGroupStage(s)}
-              {...workProps} />
+            {currentLevel === 'L2' ? (
+              /* L2: Single board — only "selected" stage for classification */
+              <WorkSection stage="selected"
+                isCreatingGroup={creatingGroupStage === 'selected'}
+                onStartCreatingGroup={s => setCreatingGroupStage(s)}
+                {...workProps} />
+            ) : (
+              /* L3: Two boards — selected + processed */
+              <>
+                <WorkSection stage="selected"
+                  isCreatingGroup={creatingGroupStage === 'selected'}
+                  onStartCreatingGroup={s => setCreatingGroupStage(s)}
+                  {...workProps} />
+                <WorkSection stage="processed"
+                  isCreatingGroup={creatingGroupStage === 'processed'}
+                  onStartCreatingGroup={s => setCreatingGroupStage(s)}
+                  {...workProps} />
+              </>
+            )}
           </div>
         </div>
 
