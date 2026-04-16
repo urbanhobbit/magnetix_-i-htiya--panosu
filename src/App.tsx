@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   DndContext, DragOverlay, closestCenter,
   KeyboardSensor, PointerSensor, useSensor, useSensors,
@@ -19,10 +19,11 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   Plus, Trash2, Edit2, Check, X, Search,
   FolderPlus, Folder, RotateCcw, ChevronRight,
-  Send, User, LogOut, Loader2,
+  Send, User, LogOut, Loader2, StickyNote, ArrowRight,
+  Shield, Users, FileText, Eye,
 } from 'lucide-react';
 import { cn } from './lib/utils';
-import { Need, Group, Stage } from './types';
+import { Need, Group, Stage, Level, L1Note } from './types';
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 
@@ -30,63 +31,18 @@ const APPS_SCRIPT_URL = import.meta.env.VITE_APPS_SCRIPT_URL || '';
 
 // ─── Session Types ──────────────────────────────────────────────────────────
 
+type Role = 'expert' | 'moderator';
+
 interface Session {
   id: string;
   expertName: string;
+  role: Role;
   startedAt: string;
 }
 
 function generateSessionId(): string {
   return `s_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
-
-// ─── Preset Data ────────────────────────────────────────────────────────────
-
-const PRESET_GROUPS: Group[] = [
-  { id: 'g1', name: 'Aile ve Bakım',       stage: 'pool' },
-  { id: 'g2', name: 'Dijital Erişim',       stage: 'pool' },
-  { id: 'g3', name: 'Eğitim ve Gelişim',    stage: 'pool' },
-  { id: 'g4', name: 'Güvenlik ve Koruma',   stage: 'pool' },
-  { id: 'g5', name: 'Sağlık ve Refah',      stage: 'pool' },
-  { id: 'g6', name: 'Sosyal Katılım',       stage: 'pool' },
-  { id: 'g7', name: 'Temel Yaşam',          stage: 'pool' },
-  { id: 'g8', name: 'Ulaşım ve Mobilite',   stage: 'pool' },
-];
-
-const PRESET_NEEDS: Need[] = [
-  { id: 'n1',  text: 'Bakımverene destek',               stage: 'pool', groupId: 'g1' },
-  { id: 'n2',  text: 'Ebeveynlik eğitimi',               stage: 'pool', groupId: 'g1' },
-  { id: 'n3',  text: 'İnternet bağlantısı',              stage: 'pool', groupId: 'g2' },
-  { id: 'n4',  text: 'Bilgisayar/Tablet',                stage: 'pool', groupId: 'g2' },
-  { id: 'n5',  text: 'Dijital okuryazarlık',             stage: 'pool', groupId: 'g2' },
-  { id: 'n6',  text: 'Güvenli internet',                 stage: 'pool', groupId: 'g2' },
-  { id: 'n7',  text: 'Eğitim uygulamaları',              stage: 'pool', groupId: 'g2' },
-  { id: 'n8',  text: 'Okul yemeği',                      stage: 'pool', groupId: 'g3' },
-  { id: 'n9',  text: 'Eğitim materyalleri',              stage: 'pool', groupId: 'g3' },
-  { id: 'n10', text: 'Okulun fiziksel şartları',         stage: 'pool', groupId: 'g3' },
-  { id: 'n11', text: 'Rehberlik ve psikolojik destek',   stage: 'pool', groupId: 'g3' },
-  { id: 'n12', text: 'Sınavlara hazırlık desteği',       stage: 'pool', groupId: 'g3' },
-  { id: 'n13', text: 'Dijital ortamda güvenlik',         stage: 'pool', groupId: 'g4' },
-  { id: 'n14', text: 'Siber zorbalıkla mücadele',        stage: 'pool', groupId: 'g4' },
-  { id: 'n15', text: 'Temel sağlık hizmetleri',          stage: 'pool', groupId: 'g5' },
-  { id: 'n16', text: 'Engelli çocuklara özel destek',    stage: 'pool', groupId: 'g5' },
-  { id: 'n17', text: 'Kronik hastalık takibi',           stage: 'pool', groupId: 'g5' },
-  { id: 'n18', text: 'Bakım ve hijyen paketleri',        stage: 'pool', groupId: 'g5' },
-  { id: 'n19', text: 'Sağlıklı yaşam bilinci',           stage: 'pool', groupId: 'g5' },
-  { id: 'n20', text: 'Diş ve göz taramaları',            stage: 'pool', groupId: 'g5' },
-  { id: 'n21', text: 'Okul gezileri',                    stage: 'pool', groupId: 'g6' },
-  { id: 'n22', text: 'Kültürel ve sanatsal etkinlikler', stage: 'pool', groupId: 'g6' },
-  { id: 'n23', text: 'Spor faaliyetleri',                stage: 'pool', groupId: 'g6' },
-  { id: 'n24', text: 'Kurslar ve atölyeler',             stage: 'pool', groupId: 'g6' },
-  { id: 'n25', text: 'Güvenli oyun alanları',            stage: 'pool', groupId: 'g6' },
-  { id: 'n26', text: 'Gıda ve beslenme',                 stage: 'pool', groupId: 'g7' },
-  { id: 'n27', text: 'Elektrik, su, ısınma',             stage: 'pool', groupId: 'g7' },
-  { id: 'n28', text: 'Temel giyim ihtiyaçları',          stage: 'pool', groupId: 'g7' },
-  { id: 'n29', text: 'Kira ve barınma desteği',          stage: 'pool', groupId: 'g7' },
-  { id: 'n30', text: 'Engelli çocuklara uygun ulaşım',   stage: 'pool', groupId: 'g8' },
-  { id: 'n31', text: 'Toplu taşıma desteği',             stage: 'pool', groupId: 'g8' },
-  { id: 'n32', text: 'Güvenli okul servisi',             stage: 'pool', groupId: 'g8' },
-];
 
 // ─── Stage Config ────────────────────────────────────────────────────────────
 
@@ -127,6 +83,14 @@ const STAGE_CONFIG: Record<Stage, {
     shadow: '0 3px 12px rgba(20,80,180,0.18)',
     dot: '#2060c0',
   },
+};
+
+// ─── Level Config ────────────────────────────────────────────────────────────
+
+const LEVEL_CONFIG: Record<Level, { label: string; desc: string; color: string; icon: React.ReactNode }> = {
+  L1: { label: 'L1 — Serbest Not', desc: 'Uzmanlar serbestçe ihtiyaç notları yazar', color: '#d4a820', icon: <StickyNote className="w-4 h-4" /> },
+  L2: { label: 'L2 — Uzman Panosu', desc: 'Uzmanlar ihtiyaçları tasnif ve adlandırır', color: '#38a020', icon: <Users className="w-4 h-4" /> },
+  L3: { label: 'L3 — Moderatör Panosu', desc: 'Moderatör uzlaşma taslağını düzenler', color: '#2060c0', icon: <Shield className="w-4 h-4" /> },
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -182,6 +146,14 @@ const StageCard = React.forwardRef<HTMLDivElement, CardProps & React.HTMLAttribu
         )}
         {...props}
       >
+        {/* Consensus indicator */}
+        {need.consensus !== undefined && (
+          <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[8px] font-bold flex items-center justify-center text-white"
+            style={{ background: need.consensus >= 0.7 ? '#38a020' : need.consensus >= 0.4 ? '#d4a820' : '#e04040' }}>
+            {Math.round(need.consensus * 100)}
+          </div>
+        )}
+
         {editing ? (
           <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
             <input
@@ -255,7 +227,6 @@ const PoolGroup = ({ group, needs, onRenameNeed, onDeleteNeed, onDeleteGroup, on
   return (
     <div ref={setRef} style={{ transform: CSS.Translate.toString(transform), transition, touchAction: 'none' }}
       className={cn('rounded border border-[rgba(160,130,60,0.15)] overflow-hidden', isDragging && 'opacity-40')}>
-      {/* Header */}
       <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[rgba(160,130,60,0.08)] cursor-pointer select-none"
         onClick={() => !editing && setOpen(v => !v)}>
         <div {...attributes} {...listeners} className="cursor-grab" onClick={e => e.stopPropagation()}>
@@ -282,7 +253,6 @@ const PoolGroup = ({ group, needs, onRenameNeed, onDeleteNeed, onDeleteGroup, on
           <button onClick={() => onDeleteGroup(group.id)} className="p-0.5 hover:text-red-500 text-[#8a6a20]/40"><Trash2 className="w-2.5 h-2.5" /></button>
         </div>
       </div>
-      {/* Cards */}
       <AnimatePresence initial={false}>
         {open && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
@@ -300,92 +270,6 @@ const PoolGroup = ({ group, needs, onRenameNeed, onDeleteNeed, onDeleteGroup, on
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
-  );
-};
-
-// ─── Top Band ─────────────────────────────────────────────────────────────────
-
-interface TopBandProps {
-  needs: Need[];
-  searchQuery: string;
-  onSearchChange: (v: string) => void;
-  onNewCard: () => void;
-  onReset: () => void;
-}
-
-const STEPS: Stage[] = ['pool', 'selected', 'processed'];
-
-const TopBand = ({ needs, searchQuery, onSearchChange, onNewCard, onReset }: TopBandProps) => {
-  const counts = useMemo(() => Object.fromEntries(
-    STEPS.map(s => [s, needs.filter(n => n.stage === s).length])
-  ) as Record<Stage, number>, [needs]);
-
-  const progress = STEPS.findIndex(s => counts[s] > 0 && s !== 'pool') + 1 || 0;
-
-  return (
-    <div className="h-14 shrink-0 flex items-center gap-4 px-5 border-b border-[rgba(0,0,0,0.07)] bg-white z-50">
-      {/* Title */}
-      <h1 className="text-[15px] font-extrabold text-[#2a1a05] whitespace-nowrap shrink-0 tracking-tight">
-        İhtiyaç <span className="text-[#7a5020]">Analizi</span>
-      </h1>
-
-      <div className="w-px h-6 bg-[rgba(0,0,0,0.08)] shrink-0" />
-
-      {/* Stepper */}
-      <div className="flex items-center gap-1 flex-1 min-w-0">
-        {STEPS.map((stage, i) => {
-          const cfg = STAGE_CONFIG[stage];
-          const count = counts[stage];
-          const done = i < progress;
-          const active = i === progress;
-
-          return (
-            <React.Fragment key={stage}>
-              {i > 0 && (
-                <div className="flex-1 h-px min-w-[12px] max-w-[40px] transition-colors duration-500"
-                  style={{ background: done ? cfg.dot : 'rgba(0,0,0,0.1)' }} />
-              )}
-              <div className="flex items-center gap-1.5 shrink-0">
-                <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold transition-all duration-300"
-                  style={{
-                    background: done || active ? cfg.dot : 'rgba(0,0,0,0.07)',
-                    color: done || active ? 'white' : 'rgba(0,0,0,0.3)',
-                    boxShadow: active ? `0 0 0 3px ${cfg.dot}30` : 'none',
-                  }}>
-                  <motion.span key={count}
-                    initial={count > 0 ? { scale: 1.5, opacity: 0 } : false}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{ duration: 0.2 }}>
-                    {count > 0 ? count : i + 1}
-                  </motion.span>
-                </div>
-                <span className="text-[11px] font-medium hidden sm:block transition-colors duration-300"
-                  style={{ color: done || active ? cfg.accent : 'rgba(0,0,0,0.3)' }}>
-                  {cfg.label}
-                </span>
-              </div>
-            </React.Fragment>
-          );
-        })}
-      </div>
-
-      {/* Actions */}
-      <div className="flex items-center gap-2 shrink-0">
-        <button onClick={onReset} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
-          <RotateCcw className="w-3.5 h-3.5" />
-        </button>
-        <div className="relative">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-          <input placeholder="Ara..." value={searchQuery} onChange={e => onSearchChange(e.target.value)}
-            className="pl-7 pr-3 py-1.5 text-xs rounded-md bg-slate-50 border border-slate-200 outline-none focus:border-amber-400 w-32 transition-colors" />
-        </div>
-        <button onClick={onNewCard}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold text-white transition-all active:scale-95 hover:opacity-90"
-          style={{ background: '#7a5020' }}>
-          <Plus className="w-3.5 h-3.5" /> Yeni Kart
-        </button>
-      </div>
     </div>
   );
 };
@@ -413,7 +297,6 @@ const PoolPanel = ({ needs, groups, searchQuery, onRenameNeed, onDeleteNeed, onD
   return (
     <div className="flex flex-col h-full border-r border-[rgba(0,0,0,0.07)] transition-colors duration-200"
       style={{ background: isOver ? '#f5f0e0' : cfg.bg }}>
-      {/* Panel header */}
       <div className="px-3 py-3 border-b border-[rgba(0,0,0,0.06)] shrink-0">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full" style={{ background: cfg.dot }} />
@@ -425,7 +308,6 @@ const PoolPanel = ({ needs, groups, searchQuery, onRenameNeed, onDeleteNeed, onD
         <p className="text-[10px] text-[#8a6a20]/50 mt-0.5">Ham ihtiyaçlar — orta alana sürükle</p>
       </div>
 
-      {/* Scrollable content */}
       <div ref={setNodeRef} className="flex-1 overflow-y-auto px-2.5 py-2.5 custom-scrollbar">
         <SortableContext id="pool" items={allItems} strategy={verticalListSortingStrategy}>
           <div className="flex flex-col gap-1.5">
@@ -487,7 +369,6 @@ const WorkSection = ({
         boxShadow: isOver ? `0 0 0 4px ${cfg.dot}25, 0 0 20px ${cfg.dot}15` : '0 0 0 0px transparent',
       }}
       transition={{ duration: 0.15 }}>
-      {/* Section header */}
       <div className="flex items-center gap-2 px-4 py-2.5 border-b shrink-0"
         style={{ borderColor: `${cfg.border}25`, background: `${cfg.cardBg}88` }}>
         <div className="w-2 h-2 rounded-full" style={{ background: cfg.dot }} />
@@ -610,8 +491,9 @@ const NewCardModal = ({ onAdd, onClose }: { onAdd: (text: string) => void; onClo
 
 // ─── Login Screen ─────────────────────────────────────────────────────────────
 
-const LoginScreen = ({ onLogin }: { onLogin: (name: string) => void }) => {
+const LoginScreen = ({ onLogin }: { onLogin: (name: string, role: Role) => void }) => {
   const [name, setName] = useState('');
+  const [role, setRole] = useState<Role>('expert');
   return (
     <div className="h-screen flex items-center justify-center bg-[#f6f3ed] font-sans">
       <motion.div
@@ -633,23 +515,51 @@ const LoginScreen = ({ onLogin }: { onLogin: (name: string) => void }) => {
         <input
           autoFocus
           placeholder="Ör: Ayşe Yılmaz"
-          className="w-full border-2 border-[#e8d890] rounded-lg bg-[#fdfaf0] outline-none py-2.5 px-3 text-sm font-sans text-[#2a1a05] placeholder-[#8a6a20]/30 mb-5 focus:border-[#7a5020] transition-colors"
+          className="w-full border-2 border-[#e8d890] rounded-lg bg-[#fdfaf0] outline-none py-2.5 px-3 text-sm font-sans text-[#2a1a05] placeholder-[#8a6a20]/30 mb-4 focus:border-[#7a5020] transition-colors"
           value={name}
           onChange={e => setName(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && name.trim()) onLogin(name.trim()); }}
+          onKeyDown={e => { if (e.key === 'Enter' && name.trim()) onLogin(name.trim(), role); }}
         />
 
+        <label className="block text-xs font-semibold text-[#4a3a18] mb-2">Rolünüz</label>
+        <div className="flex gap-2 mb-5">
+          <button
+            onClick={() => setRole('expert')}
+            className={cn(
+              'flex-1 py-2.5 rounded-lg text-xs font-semibold border-2 transition-all flex items-center justify-center gap-2',
+              role === 'expert'
+                ? 'border-[#7a5020] bg-[#7a5020] text-white'
+                : 'border-[#e8d890] text-[#8a6a20] hover:bg-[#fdfaf0]'
+            )}
+          >
+            <Users className="w-3.5 h-3.5" />
+            Uzman
+          </button>
+          <button
+            onClick={() => setRole('moderator')}
+            className={cn(
+              'flex-1 py-2.5 rounded-lg text-xs font-semibold border-2 transition-all flex items-center justify-center gap-2',
+              role === 'moderator'
+                ? 'border-[#2060b0] bg-[#2060b0] text-white'
+                : 'border-[#c0d8f0] text-[#3060a0] hover:bg-[#eef5fd]'
+            )}
+          >
+            <Shield className="w-3.5 h-3.5" />
+            Moderatör
+          </button>
+        </div>
+
         <button
-          onClick={() => { if (name.trim()) onLogin(name.trim()); }}
+          onClick={() => { if (name.trim()) onLogin(name.trim(), role); }}
           disabled={!name.trim()}
           className="w-full py-2.5 rounded-lg text-sm font-bold text-white transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ background: '#7a5020' }}
+          style={{ background: role === 'moderator' ? '#2060b0' : '#7a5020' }}
         >
           Panoya Giriş Yap
         </button>
 
         <p className="text-[10px] text-[#8a6a20]/40 text-center mt-4">
-          Çalışmanız tamamlandığında &quot;Gönder&quot; butonuyla kaydedilecektir.
+          Uzmanlar L1 ve L2&apos;de, moderatörler L3&apos;te çalışır.
         </p>
       </motion.div>
     </div>
@@ -658,16 +568,19 @@ const LoginScreen = ({ onLogin }: { onLogin: (name: string) => void }) => {
 
 // ─── Submit Confirmation Modal ────────────────────────────────────────────────
 
-const SubmitModal = ({ onConfirm, onClose, sending }: { onConfirm: () => void; onClose: () => void; sending: boolean }) => (
+const SubmitModal = ({ onConfirm, onClose, sending, title, description }: {
+  onConfirm: () => void; onClose: () => void; sending: boolean;
+  title?: string; description?: string;
+}) => (
   <>
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="fixed inset-0 bg-black/20 z-40 backdrop-blur-sm" onClick={onClose} />
     <motion.div initial={{ opacity: 0, y: -10, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -10, scale: 0.97 }} transition={{ duration: 0.15 }}
       className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-96 bg-white rounded-xl shadow-2xl p-6 border border-[rgba(0,0,0,0.08)]">
-      <h3 className="text-sm font-sans font-bold text-[#2a1a05] mb-2">Çalışmayı Gönder</h3>
+      <h3 className="text-sm font-sans font-bold text-[#2a1a05] mb-2">{title || 'Çalışmayı Gönder'}</h3>
       <p className="text-xs text-[#8a6a20]/70 mb-5 leading-relaxed">
-        Mevcut pano durumunuz kaydedilecektir. Gönderdikten sonra panoya geri dönebilir ve değişiklik yapabilirsiniz.
+        {description || 'Mevcut çalışmanız kaydedilecektir.'}
       </p>
       <div className="flex gap-2">
         <button onClick={onClose} disabled={sending}
@@ -684,12 +597,203 @@ const SubmitModal = ({ onConfirm, onClose, sending }: { onConfirm: () => void; o
   </>
 );
 
+// ─── L1: Free Notes Screen ──────────────────────────────────────────────────
+
+const L1NotesScreen = ({ session, onSubmitNotes }: {
+  session: Session;
+  onSubmitNotes: (notes: string[]) => void;
+}) => {
+  const [notes, setNotes] = useState<{ id: string; text: string }[]>([]);
+  const [currentNote, setCurrentNote] = useState('');
+  const [showSubmit, setShowSubmit] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  const addNote = () => {
+    if (currentNote.trim()) {
+      setNotes([...notes, { id: `note_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, text: currentNote.trim() }]);
+      setCurrentNote('');
+    }
+  };
+
+  const removeNote = (id: string) => setNotes(notes.filter(n => n.id !== id));
+  const editNote = (id: string, text: string) => setNotes(notes.map(n => n.id === id ? { ...n, text } : n));
+
+  const handleSubmit = async () => {
+    setSending(true);
+    const noteTexts = notes.map(n => n.text);
+
+    if (APPS_SCRIPT_URL) {
+      try {
+        await fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'L1_NOTES',
+            sessionId: session.id,
+            expertName: session.expertName,
+            submittedAt: new Date().toISOString(),
+            notes: noteTexts,
+          }),
+        });
+      } catch (err) {
+        console.error('Submit failed:', err);
+      }
+    }
+
+    setSending(false);
+    setShowSubmit(false);
+    onSubmitNotes(noteTexts);
+  };
+
+  return (
+    <div className="h-screen flex flex-col overflow-hidden bg-[#f6f3ed] font-sans">
+      {/* Header */}
+      <div className="h-14 shrink-0 flex items-center gap-4 px-5 border-b border-[rgba(0,0,0,0.07)] bg-white z-50">
+        <h1 className="text-[15px] font-extrabold text-[#2a1a05] whitespace-nowrap shrink-0 tracking-tight">
+          İhtiyaç <span className="text-[#d4a820]">Analizi</span>
+          <span className="ml-2 text-[10px] font-semibold bg-[#d4a820]/15 text-[#8a6a20] px-2 py-0.5 rounded-sm">L1</span>
+        </h1>
+        <div className="w-px h-6 bg-[rgba(0,0,0,0.08)] shrink-0" />
+        <div className="flex items-center gap-1.5 shrink-0">
+          <User className="w-3.5 h-3.5 text-[#7a5020]" />
+          <span className="text-xs font-semibold text-[#4a3a18]">{session.expertName}</span>
+        </div>
+        <div className="flex-1" />
+        {notes.length > 0 && (
+          <button
+            onClick={() => setShowSubmit(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold text-white transition-all active:scale-95 hover:opacity-90"
+            style={{ background: '#2e7020' }}
+          >
+            <Send className="w-3.5 h-3.5" /> Notları Gönder ({notes.length})
+          </button>
+        )}
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-hidden flex">
+        {/* Left: Note input */}
+        <div className="w-1/2 p-6 flex flex-col border-r border-[rgba(0,0,0,0.07)]">
+          <div className="flex items-center gap-2 mb-4">
+            <StickyNote className="w-5 h-5 text-[#d4a820]" />
+            <h2 className="text-sm font-bold text-[#4a3a18]">Serbest Notlar</h2>
+          </div>
+          <p className="text-xs text-[#8a6a20]/60 mb-4 leading-relaxed">
+            Çocukların ihtiyaçları hakkında aklınıza gelen her şeyi yazın.
+            Her bir ihtiyacı ayrı bir not olarak ekleyin.
+          </p>
+
+          <div className="flex gap-2 mb-4">
+            <textarea
+              autoFocus
+              value={currentNote}
+              onChange={e => setCurrentNote(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addNote(); } }}
+              placeholder="Bir ihtiyaç yazın... (Enter ile ekle)"
+              className="flex-1 border-2 border-[#e8d890] rounded-lg bg-[#fdfaf0] outline-none py-3 px-4 text-sm font-sans text-[#2a1a05] placeholder-[#8a6a20]/30 focus:border-[#d4a820] transition-colors resize-none"
+              rows={3}
+            />
+          </div>
+          <button
+            onClick={addNote}
+            disabled={!currentNote.trim()}
+            className="self-start flex items-center gap-1.5 px-4 py-2 rounded-md text-xs font-bold text-white transition-all active:scale-95 disabled:opacity-40"
+            style={{ background: '#d4a820' }}
+          >
+            <Plus className="w-3.5 h-3.5" /> Not Ekle
+          </button>
+        </div>
+
+        {/* Right: Notes list */}
+        <div className="w-1/2 p-6 overflow-y-auto custom-scrollbar">
+          <div className="flex items-center gap-2 mb-4">
+            <FileText className="w-5 h-5 text-[#8a6a20]" />
+            <h2 className="text-sm font-bold text-[#4a3a18]">Eklenen Notlar ({notes.length})</h2>
+          </div>
+
+          {notes.length === 0 ? (
+            <div className="py-16 text-center text-xs text-[#8a6a20]/40 border-2 border-dashed border-[#8a6a20]/15 rounded-xl">
+              Henüz not eklenmedi. Soldan yazmaya başlayın.
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <AnimatePresence>
+                {notes.map((note, i) => (
+                  <NoteCard key={note.id} note={note} index={i} onRemove={removeNote} onEdit={editNote} />
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {showSubmit && (
+          <SubmitModal
+            onConfirm={handleSubmit}
+            onClose={() => setShowSubmit(false)}
+            sending={sending}
+            title="Notları Gönder"
+            description={`${notes.length} adet not gönderilecektir. Notlarınız L2 aşamasında sentez için kullanılacaktır.`}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+const NoteCard = ({ note, index, onRemove, onEdit }: {
+  note: { id: string; text: string }; index: number;
+  onRemove: (id: string) => void; onEdit: (id: string, text: string) => void;
+}) => {
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState(note.text);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      className="group bg-[#fdfaf0] border border-[rgba(160,130,60,0.2)] rounded-lg p-3 flex items-start gap-3"
+    >
+      <span className="text-[10px] font-bold text-[#8a6a20]/40 mt-0.5 shrink-0 w-5 text-center">{index + 1}</span>
+      {editing ? (
+        <div className="flex-1 flex items-center gap-1">
+          <input
+            autoFocus
+            className="flex-1 bg-transparent border-b border-[#d4a820] text-xs font-sans outline-none text-[#4a3a18]"
+            value={editText}
+            onChange={e => setEditText(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { onEdit(note.id, editText.trim()); setEditing(false); }
+              if (e.key === 'Escape') setEditing(false);
+            }}
+          />
+          <button onClick={() => { onEdit(note.id, editText.trim()); setEditing(false); }}><Check className="w-3 h-3 text-green-600" /></button>
+          <button onClick={() => setEditing(false)}><X className="w-3 h-3 text-red-500" /></button>
+        </div>
+      ) : (
+        <>
+          <p className="flex-1 text-xs text-[#4a3a18] leading-relaxed">{note.text}</p>
+          <div className="flex shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onClick={() => setEditing(true)} className="p-1 rounded hover:bg-black/10"><Edit2 className="w-3 h-3 text-[#8a6a20]" /></button>
+            <button onClick={() => onRemove(note.id)} className="p-1 rounded hover:bg-black/10"><Trash2 className="w-3 h-3 text-[#8a6a20]" /></button>
+          </div>
+        </>
+      )}
+    </motion.div>
+  );
+};
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
-  const [needs,  setNeeds]  = useState<Need[]>(PRESET_NEEDS);
-  const [groups, setGroups] = useState<Group[]>(PRESET_GROUPS);
+  const [currentLevel, setCurrentLevel] = useState<Level>('L1');
+  const [l1Submitted, setL1Submitted] = useState(false);
+  const [needs,  setNeeds]  = useState<Need[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [activeId, setActiveId]   = useState<string | null>(null);
   const [preDragStage, setPreDragStage] = useState<Stage | null>(null);
   const [searchQuery, setSearch]  = useState('');
@@ -700,22 +804,91 @@ export default function App() {
   const [showSubmit, setShowSubmit] = useState(false);
   const [sending, setSending] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [allL1Notes, setAllL1Notes] = useState<L1Note[]>([]);
 
-  const handleLogin = useCallback((name: string) => {
-    setSession({
+  // ─── Fetch existing L1 notes for L2 ───────────────────────────────────────
+  useEffect(() => {
+    if (currentLevel === 'L2' && APPS_SCRIPT_URL) {
+      fetch(`${APPS_SCRIPT_URL}?action=getL1Notes`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.notes) {
+            setAllL1Notes(data.notes);
+            // Create pool needs from all L1 notes
+            const poolNeeds: Need[] = data.notes.map((note: L1Note, i: number) => ({
+              id: `l1_${i}_${note.id || Math.random().toString(36).slice(2)}`,
+              text: note.text,
+              stage: 'pool' as Stage,
+              originalNotes: [note.text],
+            }));
+            setNeeds(poolNeeds);
+            setGroups([]);
+          }
+        })
+        .catch(err => console.error('Failed to fetch L1 notes:', err));
+    }
+  }, [currentLevel]);
+
+  // ─── Fetch L2 results for L3 ──────────────────────────────────────────────
+  useEffect(() => {
+    if (currentLevel === 'L3' && APPS_SCRIPT_URL) {
+      fetch(`${APPS_SCRIPT_URL}?action=getL2Results`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.needs && data.groups) {
+            // Items with high consensus come pre-grouped
+            const consensusNeeds: Need[] = data.needs.map((n: Need) => ({
+              ...n,
+              stage: (n.consensus !== undefined && n.consensus >= 0.7) ? n.stage : 'pool',
+              groupId: (n.consensus !== undefined && n.consensus >= 0.7) ? n.groupId : undefined,
+            }));
+            setNeeds(consensusNeeds);
+            setGroups(data.groups);
+          }
+        })
+        .catch(err => console.error('Failed to fetch L2 results:', err));
+    }
+  }, [currentLevel]);
+
+  const handleLogin = useCallback((name: string, role: Role) => {
+    const s: Session = {
       id: generateSessionId(),
       expertName: name,
+      role,
       startedAt: new Date().toISOString(),
-    });
+    };
+    setSession(s);
+    // Moderators go directly to L3
+    if (role === 'moderator') {
+      setCurrentLevel('L3');
+    } else {
+      setCurrentLevel('L1');
+    }
   }, []);
 
   const handleLogout = useCallback(() => {
     if (window.confirm('Çıkış yapmak istediğinize emin misiniz? Kaydedilmemiş değişiklikler kaybolacaktır.')) {
       setSession(null);
-      setNeeds(PRESET_NEEDS);
-      setGroups(PRESET_GROUPS);
+      setNeeds([]);
+      setGroups([]);
       setSubmitted(false);
+      setL1Submitted(false);
+      setCurrentLevel('L1');
     }
+  }, []);
+
+  const handleL1Submit = useCallback((noteTexts: string[]) => {
+    setL1Submitted(true);
+    // Auto-advance to L2
+    setCurrentLevel('L2');
+    // Create pool needs from own notes for now
+    const poolNeeds: Need[] = noteTexts.map((text, i) => ({
+      id: `own_${i}_${Math.random().toString(36).slice(2)}`,
+      text,
+      stage: 'pool' as Stage,
+    }));
+    setNeeds(poolNeeds);
+    setGroups([]);
   }, []);
 
   const handleSubmit = useCallback(async () => {
@@ -723,8 +896,10 @@ export default function App() {
     setSending(true);
 
     const payload = {
+      type: currentLevel === 'L2' ? 'L2_BOARD' : 'L3_BOARD',
       sessionId: session.id,
       expertName: session.expertName,
+      level: currentLevel,
       startedAt: session.startedAt,
       submittedAt: new Date().toISOString(),
       needs: needs.map(n => ({
@@ -733,6 +908,7 @@ export default function App() {
         stage: n.stage,
         groupId: n.groupId || '',
         groupName: n.groupId ? groups.find(g => g.id === n.groupId)?.name || '' : '',
+        consensus: n.consensus,
       })),
       groups: groups.map(g => ({
         id: g.id,
@@ -750,12 +926,11 @@ export default function App() {
           body: JSON.stringify(payload),
         });
       } else {
-        // Fallback: download as JSON if no Apps Script URL configured
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `ihtiyac-analizi_${session.expertName.replace(/\s+/g, '-')}_${Date.now()}.json`;
+        a.download = `ihtiyac-${currentLevel}_${session.expertName.replace(/\s+/g, '-')}_${Date.now()}.json`;
         a.click();
         URL.revokeObjectURL(url);
       }
@@ -767,7 +942,7 @@ export default function App() {
     } finally {
       setSending(false);
     }
-  }, [session, needs, groups]);
+  }, [session, needs, groups, currentLevel]);
 
   const showToast = (stage: Stage) => {
     const id = Math.random().toString(36).slice(2);
@@ -852,7 +1027,6 @@ export default function App() {
       setNewGroupName(''); setCreatingGroupStage(null);
     }
   };
-  const resetToPresets = () => { if (window.confirm('Pano sıfırlansın mı?')) { setNeeds(PRESET_NEEDS); setGroups(PRESET_GROUPS); } };
 
   const activeNeed  = activeId ? needs.find(n => n.id === activeId)  : null;
   const activeGroup = activeId ? groups.find(g => g.id === activeId) : null;
@@ -869,23 +1043,83 @@ export default function App() {
   // ─── Login Gate ───────────────────────────────────────────────────────────
   if (!session) return <LoginScreen onLogin={handleLogin} />;
 
+  // ─── L1: Free Notes ───────────────────────────────────────────────────────
+  if (currentLevel === 'L1' && session.role === 'expert') {
+    return <L1NotesScreen session={session} onSubmitNotes={handleL1Submit} />;
+  }
+
+  // ─── L2 / L3: Board ──────────────────────────────────────────────────────
+  const levelCfg = LEVEL_CONFIG[currentLevel];
+
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-[#f6f3ed] font-sans">
       <DndContext sensors={sensors} collisionDetection={closestCenter}
         onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
 
-        {/* ─── Top Band (modified) ─── */}
+        {/* ─── Top Band ─── */}
         <div className="h-14 shrink-0 flex items-center gap-4 px-5 border-b border-[rgba(0,0,0,0.07)] bg-white z-50">
           <h1 className="text-[15px] font-extrabold text-[#2a1a05] whitespace-nowrap shrink-0 tracking-tight">
-            İhtiyaç <span className="text-[#7a5020]">Analizi</span>
+            İhtiyaç <span style={{ color: levelCfg.color }}>Analizi</span>
+            <span className="ml-2 text-[10px] font-semibold px-2 py-0.5 rounded-sm"
+              style={{ background: `${levelCfg.color}15`, color: levelCfg.color }}>
+              {currentLevel}
+            </span>
           </h1>
 
           <div className="w-px h-6 bg-[rgba(0,0,0,0.08)] shrink-0" />
 
+          {/* Level stepper */}
+          <div className="flex items-center gap-1 flex-1 min-w-0">
+            {(['L1', 'L2', 'L3'] as Level[]).map((level, i) => {
+              const lcfg = LEVEL_CONFIG[level];
+              const isCurrent = level === currentLevel;
+              const isPast = (['L1', 'L2', 'L3'] as Level[]).indexOf(currentLevel) > i;
+              const isClickable = isPast || (level === 'L2' && l1Submitted && session.role === 'expert');
+
+              return (
+                <React.Fragment key={level}>
+                  {i > 0 && (
+                    <div className="flex-1 h-px min-w-[12px] max-w-[40px] transition-colors duration-500"
+                      style={{ background: isPast ? lcfg.color : 'rgba(0,0,0,0.1)' }} />
+                  )}
+                  <button
+                    onClick={() => isClickable && setCurrentLevel(level)}
+                    disabled={!isClickable && !isCurrent}
+                    className={cn(
+                      'flex items-center gap-1.5 shrink-0 transition-all',
+                      isClickable && 'cursor-pointer hover:opacity-80',
+                      !isClickable && !isCurrent && 'opacity-40 cursor-not-allowed',
+                    )}
+                  >
+                    <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold transition-all duration-300"
+                      style={{
+                        background: isCurrent || isPast ? lcfg.color : 'rgba(0,0,0,0.07)',
+                        color: isCurrent || isPast ? 'white' : 'rgba(0,0,0,0.3)',
+                        boxShadow: isCurrent ? `0 0 0 3px ${lcfg.color}30` : 'none',
+                      }}>
+                      {i + 1}
+                    </div>
+                    <span className="text-[11px] font-medium hidden sm:block transition-colors duration-300"
+                      style={{ color: isCurrent || isPast ? lcfg.color : 'rgba(0,0,0,0.3)' }}>
+                      {level}
+                    </span>
+                  </button>
+                </React.Fragment>
+              );
+            })}
+          </div>
+
           {/* Expert info */}
           <div className="flex items-center gap-1.5 shrink-0">
-            <User className="w-3.5 h-3.5 text-[#7a5020]" />
+            {session.role === 'moderator' ? <Shield className="w-3.5 h-3.5 text-[#2060b0]" /> : <User className="w-3.5 h-3.5 text-[#7a5020]" />}
             <span className="text-xs font-semibold text-[#4a3a18]">{session.expertName}</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-sm font-medium"
+              style={{
+                background: session.role === 'moderator' ? '#2060b0/10' : '#7a5020/10',
+                color: session.role === 'moderator' ? '#2060b0' : '#7a5020',
+              }}>
+              {session.role === 'moderator' ? 'Moderatör' : 'Uzman'}
+            </span>
             {submitted && (
               <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-sm font-medium ml-1">
                 Gönderildi
@@ -895,47 +1129,8 @@ export default function App() {
 
           <div className="w-px h-6 bg-[rgba(0,0,0,0.08)] shrink-0" />
 
-          {/* Stepper */}
-          <div className="flex items-center gap-1 flex-1 min-w-0">
-            {(['pool', 'selected', 'processed'] as Stage[]).map((stage, i) => {
-              const cfg = STAGE_CONFIG[stage];
-              const count = needs.filter(n => n.stage === stage).length;
-              const progress = (['pool', 'selected', 'processed'] as Stage[]).findIndex(
-                s => needs.filter(n => n.stage === s).length > 0 && s !== 'pool'
-              ) + 1 || 0;
-              const done = i < progress;
-              const active = i === progress;
-
-              return (
-                <React.Fragment key={stage}>
-                  {i > 0 && (
-                    <div className="flex-1 h-px min-w-[12px] max-w-[40px] transition-colors duration-500"
-                      style={{ background: done ? cfg.dot : 'rgba(0,0,0,0.1)' }} />
-                  )}
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold transition-all duration-300"
-                      style={{
-                        background: done || active ? cfg.dot : 'rgba(0,0,0,0.07)',
-                        color: done || active ? 'white' : 'rgba(0,0,0,0.3)',
-                        boxShadow: active ? `0 0 0 3px ${cfg.dot}30` : 'none',
-                      }}>
-                      {count > 0 ? count : i + 1}
-                    </div>
-                    <span className="text-[11px] font-medium hidden sm:block transition-colors duration-300"
-                      style={{ color: done || active ? cfg.accent : 'rgba(0,0,0,0.3)' }}>
-                      {cfg.label}
-                    </span>
-                  </div>
-                </React.Fragment>
-              );
-            })}
-          </div>
-
           {/* Actions */}
           <div className="flex items-center gap-2 shrink-0">
-            <button onClick={resetToPresets} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
               <input placeholder="Ara..." value={searchQuery} onChange={e => setSearch(e.target.value)}
@@ -1001,7 +1196,19 @@ export default function App() {
 
       {/* Submit Modal */}
       <AnimatePresence>
-        {showSubmit && <SubmitModal onConfirm={handleSubmit} onClose={() => setShowSubmit(false)} sending={sending} />}
+        {showSubmit && (
+          <SubmitModal
+            onConfirm={handleSubmit}
+            onClose={() => setShowSubmit(false)}
+            sending={sending}
+            title={currentLevel === 'L2' ? 'Uzman Çalışmasını Gönder' : 'Moderatör Çalışmasını Gönder'}
+            description={
+              currentLevel === 'L2'
+                ? 'Tasnif ve adlandırma çalışmanız kaydedilecektir. Diğer uzmanlarla birlikte uzlaşma hesaplanacaktır.'
+                : 'Moderatör olarak son halinizi verdiğiniz pano kaydedilecektir.'
+            }
+          />
+        )}
       </AnimatePresence>
 
       <ToastContainer toasts={toasts} />
