@@ -269,7 +269,7 @@ function doGet(e) {
   }
 }
 
-// ─── getL1Notes: Tüm uzmanların L1 notlarını Gemini ile sentezleyip döndür ──
+// ─── getL1Notes: Tüm uzmanların L1 notlarını parse edip sentezleyerek döndür ─
 
 function getL1Notes() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -300,97 +300,80 @@ function getL1Notes() {
       .setMimeType(ContentService.MimeType.JSON);
   }
 
-  // Gemini ile sentezle
-  try {
-    const synthesized = synthesizeL1NotesWithGemini(rawNotes);
-    return ContentService
-      .createTextOutput(JSON.stringify({ notes: synthesized, raw: rawNotes }))
-      .setMimeType(ContentService.MimeType.JSON);
-  } catch (err) {
-    // Gemini başarısız olursa ham notları döndür
-    Logger.log('Gemini synthesis failed: ' + err.toString());
-    return ContentService
-      .createTextOutput(JSON.stringify({ notes: rawNotes, synthesisError: err.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
+  // Basit parse ile sentezle (Gemini yerine)
+  const synthesized = parseAndDedup(rawNotes);
+  return ContentService
+    .createTextOutput(JSON.stringify({ notes: synthesized, raw: rawNotes }))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
-// ─── Gemini API ile L1 notlarını sentezle ───────────────────────────────────
+// ─── Basit parse: satır satır ayır, tekrarları birleştir ────────────────────
+// Notlar şu formatta geliyor:
+//   Kategori Başlığı
+//   - madde 1
+//   - madde 2
+// Parse eder, normalize eder, tekrarları çıkarır.
 
-function synthesizeL1NotesWithGemini(rawNotes) {
-  // Notları uzman bazında grupla
-  const byExpert = {};
-  rawNotes.forEach(n => {
-    if (!byExpert[n.expertName]) byExpert[n.expertName] = [];
-    byExpert[n.expertName].push(n.text);
+function parseAndDedup(rawNotes) {
+  // Her notu satır satır parse et
+  const itemMap = {}; // normalizedText -> { text, sources: Set, category }
+
+  rawNotes.forEach(note => {
+    const lines = note.text.split('\n');
+    let currentCategory = '';
+
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+
+      // "- " ile başlayan satır = ihtiyaç maddesi
+      if (trimmed.startsWith('- ') || trimmed.startsWith('-')) {
+        const itemText = trimmed.replace(/^-\s*/, '').trim();
+        if (!itemText || itemText === ',') return;
+
+        const normalized = itemText.toLowerCase()
+          .replace(/[.,;:!?]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        if (!normalized) return;
+
+        if (!itemMap[normalized]) {
+          itemMap[normalized] = {
+            text: itemText,
+            sources: new Set(),
+            category: currentCategory,
+          };
+        }
+        itemMap[normalized].sources.add(note.expertName);
+      } else {
+        // Başlık satırı (kategori)
+        currentCategory = trimmed;
+      }
+    });
   });
 
-  const expertSummary = Object.keys(byExpert).map(name =>
-    name + ':\n' + byExpert[name].map((t, i) => '  ' + (i + 1) + '. ' + t).join('\n')
-  ).join('\n\n');
-
-  const prompt = `Sen bir ihtiyaç analizi uzmanısın. Aşağıda birden fazla uzmanın serbest yazılmış ihtiyaç notları var.
-
-Görevin:
-1. Tüm notları oku ve anlamsal olarak benzer/örtüşen notları birleştir
-2. Her birleştirilmiş ihtiyacı kısa, net ve tek cümlelik bir ifadeye dönüştür
-3. Tekrar edenleri çıkar, ama hiçbir özgün ihtiyacı kaybetme
-4. Sonucu JSON formatında döndür
-
-UZMAN NOTLARI:
-${expertSummary}
-
-ÇIKTI FORMATI (sadece JSON, başka bir şey yazma):
-[
-  {"text": "Sentezlenmiş ihtiyaç ifadesi", "sources": ["Uzman1", "Uzman2"]},
-  {"text": "Başka bir ihtiyaç", "sources": ["Uzman3"]}
-]
-
-Kurallar:
-- Her ihtiyaç Türkçe olmalı
-- "sources" alanında bu ihtiyacı belirten uzman adlarını listele
-- Çok benzer notları tek ihtiyaçta birleştir
-- Tamamen farklı notları ayrı ihtiyaç olarak koru
-- Sadece JSON döndür, açıklama ekleme`;
-
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + GEMINI_API_KEY;
-
-  const response = UrlFetchApp.fetch(url, {
-    method: 'post',
-    contentType: 'application/json',
-    payload: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 4096,
-      },
-    }),
-    muteHttpExceptions: true,
+  // Sonuçları frontend formatına dönüştür
+  const results = [];
+  let idx = 0;
+  Object.keys(itemMap).forEach(key => {
+    const entry = itemMap[key];
+    const sources = Array.from(entry.sources);
+    results.push({
+      id: 'syn_' + idx,
+      text: entry.text,
+      expertName: sources.join(', '),
+      timestamp: new Date().toISOString(),
+      category: entry.category,
+      sourceCount: sources.length,
+    });
+    idx++;
   });
 
-  const result = JSON.parse(response.getContentText());
+  // Çok kaynaklı olanlar önce gelsin
+  results.sort((a, b) => b.sourceCount - a.sourceCount);
 
-  if (result.error) {
-    throw new Error('Gemini API error: ' + JSON.stringify(result.error));
-  }
-
-  const text = result.candidates[0].content.parts[0].text;
-
-  // JSON'ı parse et (markdown code block olabilir)
-  let jsonStr = text.trim();
-  if (jsonStr.startsWith('```')) {
-    jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
-  }
-
-  const synthesized = JSON.parse(jsonStr);
-
-  // Frontend'in beklediği formata dönüştür
-  return synthesized.map((item, idx) => ({
-    id: 'syn_' + idx,
-    text: item.text,
-    expertName: (item.sources || []).join(', '),
-    timestamp: new Date().toISOString(),
-  }));
+  return results;
 }
 
 // ─── getL2Results: L2 sonuçlarını sentezle ve döndür ────────────────────────
