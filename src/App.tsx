@@ -807,22 +807,66 @@ export default function App() {
   const [allL1Notes, setAllL1Notes] = useState<L1Note[]>([]);
   const [loadingNotes, setLoadingNotes] = useState(false);
 
-  // ─── Fetch synthesized L1 notes for L2 ────────────────────────────────────
+  // ─── Parse + dedup L1 notes in frontend ──────────────────────────────────
+  const parseAndDedup = (rawNotes: L1Note[]): { text: string; sources: string; category: string }[] => {
+    const itemMap: Record<string, { text: string; sources: Record<string, boolean>; category: string }> = {};
+
+    for (const note of rawNotes) {
+      const lines = String(note.text).split('\n');
+      let currentCategory = '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        if (trimmed.startsWith('-')) {
+          const itemText = trimmed.replace(/^-\s*/, '').trim();
+          if (!itemText || itemText === ',') continue;
+
+          const normalized = itemText.toLowerCase()
+            .replace(/[.,;:!?]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          if (!normalized) continue;
+
+          if (!itemMap[normalized]) {
+            itemMap[normalized] = { text: itemText, sources: {}, category: currentCategory };
+          }
+          itemMap[normalized].sources[note.expertName] = true;
+        } else {
+          currentCategory = trimmed;
+        }
+      }
+    }
+
+    const results = Object.values(itemMap).map(entry => ({
+      text: entry.text,
+      sources: Object.keys(entry.sources).join(', '),
+      category: entry.category,
+      sourceCount: Object.keys(entry.sources).length,
+    }));
+
+    results.sort((a, b) => b.sourceCount - a.sourceCount);
+    return results;
+  };
+
+  // ─── Fetch raw L1 notes for L2, parse in frontend ─────────────────────────
   useEffect(() => {
     if (currentLevel === 'L2' && APPS_SCRIPT_URL) {
       setLoadingNotes(true);
-      // Delay to allow POST to complete before fetching
       const timer = setTimeout(() => {
         fetch(`${APPS_SCRIPT_URL}?action=getL1Notes`)
           .then(r => r.json())
           .then(data => {
-            if (data.notes && data.notes.length > 0) {
-              setAllL1Notes(data.notes);
-              const poolNeeds: Need[] = data.notes.map((note: L1Note, i: number) => ({
-                id: `l1_${i}_${note.id || Math.random().toString(36).slice(2)}`,
-                text: note.text,
+            const raw: L1Note[] = data.raw || data.notes || [];
+            if (raw.length > 0) {
+              setAllL1Notes(raw);
+              const parsed = parseAndDedup(raw);
+              const poolNeeds: Need[] = parsed.map((item, i) => ({
+                id: `syn_${i}_${Math.random().toString(36).slice(2)}`,
+                text: item.text,
                 stage: 'pool' as Stage,
-                originalNotes: [note.text],
+                originalNotes: [item.sources],
               }));
               setNeeds(poolNeeds);
               setGroups([]);
@@ -833,7 +877,7 @@ export default function App() {
             console.error('Failed to fetch L1 notes:', err);
             setLoadingNotes(false);
           });
-      }, 3000); // 3 sec delay for Sheets write to complete
+      }, 3000);
       return () => clearTimeout(timer);
     }
   }, [currentLevel]);
