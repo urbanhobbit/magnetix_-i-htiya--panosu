@@ -1335,25 +1335,11 @@ export default function App() {
               onDeleteGroup={deleteGroup} onRenameGroup={renameGroup} />
           </div>
           <div className="flex-1 flex flex-col gap-3 p-4 overflow-hidden">
-            {currentLevel === 'L2' ? (
-              /* L2: Single board — only "selected" stage for classification */
-              <WorkSection stage="selected"
-                isCreatingGroup={creatingGroupStage === 'selected'}
-                onStartCreatingGroup={s => setCreatingGroupStage(s)}
-                {...workProps} />
-            ) : (
-              /* L3: Two boards — selected + processed */
-              <>
-                <WorkSection stage="selected"
-                  isCreatingGroup={creatingGroupStage === 'selected'}
-                  onStartCreatingGroup={s => setCreatingGroupStage(s)}
-                  {...workProps} />
-                <WorkSection stage="processed"
-                  isCreatingGroup={creatingGroupStage === 'processed'}
-                  onStartCreatingGroup={s => setCreatingGroupStage(s)}
-                  {...workProps} />
-              </>
-            )}
+            {/* L2 & L3: Single board — only "selected" (Tasnif) stage */}
+            <WorkSection stage="selected"
+              isCreatingGroup={creatingGroupStage === 'selected'}
+              onStartCreatingGroup={s => setCreatingGroupStage(s)}
+              {...workProps} />
           </div>
         </div>
 
