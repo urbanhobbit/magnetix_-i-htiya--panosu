@@ -882,24 +882,108 @@ export default function App() {
     }
   }, [currentLevel]);
 
-  // ─── Fetch L2 results for L3 ──────────────────────────────────────────────
+  // ─── Fetch L2 results for L3 — consensus calculated in frontend ──────────
   useEffect(() => {
     if (currentLevel === 'L3' && APPS_SCRIPT_URL) {
+      setLoadingNotes(true);
       fetch(`${APPS_SCRIPT_URL}?action=getL2Results`)
         .then(r => r.json())
         .then(data => {
-          if (data.needs && data.groups) {
-            // Items with high consensus come pre-grouped
-            const consensusNeeds: Need[] = data.needs.map((n: Need) => ({
-              ...n,
-              stage: (n.consensus !== undefined && n.consensus >= 0.7) ? n.stage : 'pool',
-              groupId: (n.consensus !== undefined && n.consensus >= 0.7) ? n.groupId : undefined,
-            }));
-            setNeeds(consensusNeeds);
-            setGroups(data.groups);
+          const expertResults: { expertName: string; needs: any[]; groups: any[] }[] = data.expertResults || [];
+
+          if (expertResults.length === 0) {
+            setNeeds([]);
+            setGroups([]);
+            setLoadingNotes(false);
+            return;
           }
+
+          const totalExperts = expertResults.length;
+
+          // Build a map: normalized need text → { text, assignments: [{groupName, expertName}], stages[] }
+          const needTextMap: Record<string, {
+            text: string; id: string;
+            assignments: { groupName: string; expertName: string }[];
+            stages: string[];
+          }> = {};
+          const allGroupNames = new Set<string>();
+
+          for (const er of expertResults) {
+            const groupMap: Record<string, string> = {};
+            for (const g of er.groups) { groupMap[g.id] = g.name; }
+
+            for (const n of er.needs) {
+              const key = n.text.trim().toLowerCase()
+                .replace(/[.,;:!?]/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+              if (!key) continue;
+
+              if (!needTextMap[key]) {
+                needTextMap[key] = { text: n.text, id: n.id, assignments: [], stages: [] };
+              }
+              const groupName = n.groupId ? (groupMap[n.groupId] || n.groupName || '') : '';
+              needTextMap[key].assignments.push({ groupName, expertName: er.expertName });
+              needTextMap[key].stages.push(n.stage || 'pool');
+              if (groupName) allGroupNames.add(groupName);
+            }
+          }
+
+          // Create merged groups
+          const mergedGroups: Group[] = [];
+          const groupNameToId: Record<string, string> = {};
+          let gIdx = 0;
+          for (const name of Array.from(allGroupNames)) {
+            const gId = `mg_${gIdx++}`;
+            groupNameToId[name] = gId;
+            mergedGroups.push({ id: gId, name, stage: 'selected' });
+          }
+
+          // Create merged needs with consensus
+          const mergedNeeds: Need[] = [];
+          let nIdx = 0;
+          for (const key of Object.keys(needTextMap)) {
+            const entry = needTextMap[key];
+
+            // Find most common group assignment
+            const groupCounts: Record<string, number> = {};
+            for (const a of entry.assignments) {
+              if (a.groupName) {
+                groupCounts[a.groupName] = (groupCounts[a.groupName] || 0) + 1;
+              }
+            }
+
+            let bestGroup = '';
+            let bestCount = 0;
+            for (const gn of Object.keys(groupCounts)) {
+              if (groupCounts[gn] > bestCount) {
+                bestCount = groupCounts[gn];
+                bestGroup = gn;
+              }
+            }
+
+            const consensus = bestGroup ? Math.round((bestCount / totalExperts) * 100) / 100 : 0;
+
+            // High consensus → pre-grouped in "selected", low → pool
+            const isConsensus = consensus >= 0.7;
+            mergedNeeds.push({
+              id: `mn_${nIdx++}`,
+              text: entry.text,
+              stage: isConsensus ? 'selected' : 'pool',
+              groupId: isConsensus && bestGroup ? groupNameToId[bestGroup] : undefined,
+              consensus,
+              originalNotes: entry.assignments.map(a => `${a.expertName}: ${entry.text}`),
+            });
+          }
+
+          setNeeds(mergedNeeds);
+          setGroups(mergedGroups);
+          setLoadingNotes(false);
         })
-        .catch(err => console.error('Failed to fetch L2 results:', err));
+        .catch(err => {
+          console.error('Failed to fetch L2 results:', err);
+          setLoadingNotes(false);
+        });
     }
   }, [currentLevel]);
 
@@ -1097,7 +1181,7 @@ export default function App() {
   const levelCfg = LEVEL_CONFIG[currentLevel];
 
   // Loading screen while fetching synthesized notes
-  if (loadingNotes && currentLevel === 'L2') {
+  if (loadingNotes && (currentLevel === 'L2' || currentLevel === 'L3')) {
     return (
       <div className="h-screen flex items-center justify-center bg-[#f6f3ed] font-sans">
         <motion.div
@@ -1106,9 +1190,14 @@ export default function App() {
           className="flex flex-col items-center gap-4"
         >
           <Loader2 className="w-8 h-8 text-[#38a020] animate-spin" />
-          <h2 className="text-sm font-bold text-[#4a3a18]">Notlar Sentezleniyor...</h2>
+          <h2 className="text-sm font-bold text-[#4a3a18]">
+            {currentLevel === 'L3' ? 'Uzlaşma Hesaplanıyor...' : 'Notlar Sentezleniyor...'}
+          </h2>
           <p className="text-xs text-[#8a6a20]/60 text-center max-w-xs">
-            Tüm uzmanların L1 notları yapay zeka ile birleştiriliyor.<br />
+            {currentLevel === 'L3'
+              ? 'Uzmanların L2 tasnif sonuçları karşılaştırılıyor ve uzlaşma hesaplanıyor.'
+              : 'Tüm uzmanların L1 notları yapay zeka ile birleştiriliyor.'}
+            <br />
             Bu işlem birkaç saniye sürebilir.
           </p>
         </motion.div>

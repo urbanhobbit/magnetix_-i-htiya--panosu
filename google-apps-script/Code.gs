@@ -302,128 +302,40 @@ function getL1Notes() {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// ─── getL2Results: L2 sonuçlarını sentezle ve döndür ────────────────────────
-// Birden fazla uzmanın L2 tasniflerini karşılaştırarak uzlaşma hesaplar
+// ─── getL2Results: Ham uzman L2 sonuçlarını döndür ──────────────────────────
+// Consensus hesaplaması frontend'de yapılır (ES6 uyumluluk sorunu önlenir)
 
 function getL2Results() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(L2_RESULTS_SHEET);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(L2_RESULTS_SHEET);
 
   if (!sheet) {
     return ContentService
-      .createTextOutput(JSON.stringify({ needs: [], groups: [] }))
+      .createTextOutput(JSON.stringify({ expertResults: [] }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 
-  const data = sheet.getDataRange().getValues();
+  var data = sheet.getDataRange().getValues();
   if (data.length <= 1) {
     return ContentService
-      .createTextOutput(JSON.stringify({ needs: [], groups: [] }))
+      .createTextOutput(JSON.stringify({ expertResults: [] }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 
-  // Her uzmanın sonuçlarını topla
-  const expertResults = [];
-  for (let i = 1; i < data.length; i++) {
+  var expertResults = [];
+  for (var i = 1; i < data.length; i++) {
     try {
       expertResults.push({
         expertName: data[i][1],
+        submittedAt: data[i][2],
         needs: JSON.parse(data[i][3]),
         groups: JSON.parse(data[i][4]),
       });
-    } catch (_) {}
+    } catch (e) {}
   }
-
-  if (expertResults.length === 0) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ needs: [], groups: [] }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-
-  // Tek uzman varsa doğrudan döndür (consensus=1)
-  if (expertResults.length === 1) {
-    const r = expertResults[0];
-    const needs = r.needs.map(n => ({ ...n, consensus: 1.0 }));
-    return ContentService
-      .createTextOutput(JSON.stringify({ needs: needs, groups: r.groups }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-
-  // Birden fazla uzman: uzlaşma hesapla
-  // Strateji: Her ihtiyaç metnini normalize et, aynı gruba koyan uzman sayısı / toplam uzman
-  const totalExperts = expertResults.length;
-  
-  // Tüm unique ihtiyaç metinlerini topla
-  const needTextMap = {}; // text -> { groupAssignments: [{groupName, expertName}], needObj }
-  const allGroupNames = new Set();
-
-  expertResults.forEach(er => {
-    const groupMap = {};
-    er.groups.forEach(g => { groupMap[g.id] = g.name; });
-    
-    er.needs.forEach(n => {
-      const key = n.text.trim().toLowerCase();
-      if (!needTextMap[key]) {
-        needTextMap[key] = { text: n.text, id: n.id, assignments: [], stages: [] };
-      }
-      const groupName = n.groupId ? (groupMap[n.groupId] || '') : '';
-      needTextMap[key].assignments.push({ groupName: groupName, expertName: er.expertName });
-      needTextMap[key].stages.push(n.stage);
-      if (groupName) allGroupNames.add(groupName);
-    });
-  });
-
-  // Uzlaşma hesapla ve sonuç oluştur
-  const mergedGroups = [];
-  const groupNameToId = {};
-  let gIdx = 0;
-  allGroupNames.forEach(name => {
-    const gId = 'mg_' + gIdx++;
-    groupNameToId[name] = gId;
-    mergedGroups.push({ id: gId, name: name, stage: 'processed' });
-  });
-
-  const mergedNeeds = [];
-  Object.keys(needTextMap).forEach((key, idx) => {
-    const entry = needTextMap[key];
-    
-    // En çok kullanılan grup adını bul
-    const groupCounts = {};
-    entry.assignments.forEach(a => {
-      if (a.groupName) {
-        groupCounts[a.groupName] = (groupCounts[a.groupName] || 0) + 1;
-      }
-    });
-
-    let bestGroup = '';
-    let bestCount = 0;
-    Object.keys(groupCounts).forEach(gn => {
-      if (groupCounts[gn] > bestCount) {
-        bestCount = groupCounts[gn];
-        bestGroup = gn;
-      }
-    });
-
-    // Uzlaşma: aynı gruba koyan uzman oranı
-    const consensus = bestGroup ? (bestCount / totalExperts) : 0;
-    
-    // Stage: çoğunluk processed ise processed, değilse pool
-    const processedCount = entry.stages.filter(s => s === 'processed').length;
-    const stage = processedCount > totalExperts / 2 ? 'processed' : 'pool';
-
-    mergedNeeds.push({
-      id: 'mn_' + idx,
-      text: entry.text,
-      stage: stage,
-      groupId: bestGroup ? groupNameToId[bestGroup] : undefined,
-      groupName: bestGroup || undefined,
-      consensus: Math.round(consensus * 100) / 100,
-      originalNotes: entry.assignments.map(a => a.expertName + ': ' + entry.text),
-    });
-  });
 
   return ContentService
-    .createTextOutput(JSON.stringify({ needs: mergedNeeds, groups: mergedGroups }))
+    .createTextOutput(JSON.stringify({ expertResults: expertResults }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
